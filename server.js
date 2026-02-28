@@ -1120,7 +1120,9 @@ socket.on('submitAnswer', async (ans) => {
 });
 
 // --- DEPLOYMENT PORT FIX ---
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+// Use the port Railway gives us, or default to 8080 for local testing
+const PORT = process.env.PORT || 8080;
+
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Multiplayer SciBowl running on port ${PORT}`);
 });

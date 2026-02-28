@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Science Bowl Reader</title>
+    <link rel="icon" type="image/png" href="/logo.png">
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        :root { --bg: #121212; --card: #1e1e1e; --accent: #00e5ff; --error: #ff5252; --success: #69f0ae; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: #eceff1; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        
+        /* --- NEW GLOBAL HEADER STYLES --- */
+        #main-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            margin-bottom: 30px;
+            font-size: 3.5rem;
+            font-weight: 800;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            letter-spacing: 1px;
+        }
+        #main-header img {
+            height: 4.5rem; /* Scales the image to match the font height */
+            margin-right: 2px; /* Pulls the 'c' right up next to the S */
+            margin-bottom: -5px; /* Adjusts the baseline so it sits flat with the text */
+            filter: drop-shadow(0px 0px 10px rgba(220, 20, 60, 0.8));
+        }
+
+        #login-screen { background: var(--card); padding: 40px; border-radius: 12px; text-align: center; margin-top: 20px; }
+        input[type="text"], select, button { padding: 10px; margin: 5px; font-size: 1rem; border-radius: 6px; border: 1px solid #444; background: #2a2a2a; color: white; }
+        button { background: var(--accent); color: #000; font-weight: bold; cursor: pointer; border: none; }
+        button:hover { opacity: 0.8; }
+        
+        #game-ui { display: none; width: 100%; max-width: 1300px; gap: 20px; align-items: flex-start; }
+        .col { flex: 1; display: flex; flex-direction: column; gap: 15px; }
+        .col-main { flex: 2; }
+        
+        .box { background: var(--card); padding: 20px; border-radius: 12px; border: 1px solid #333; }
+        
+        #question-box { font-size: 1.4rem; line-height: 1.6; min-height: 200px; border-left: 5px solid var(--accent); padding-left: 15px; white-space: pre-wrap;}
+        #live-typing { color: var(--accent); font-style: italic; min-height: 30px; font-size: 1.2rem; }
+        
+        #input-area { display: none; margin-top: 15px; }
+        #answer-input { width: calc(100% - 30px); font-size: 1.2rem; padding: 15px; }
+        
+        #event-log { height: 150px; overflow-y: auto; font-size: 0.9rem; color: #b0bec5; font-family: monospace; border-top: 1px solid #444; padding-top: 10px; }
+        
+        .chat-container { height: 180px; overflow-y: auto; font-size: 0.95rem; border-bottom: 1px solid #444; margin-bottom: 10px; padding-bottom: 5px; }
+        .chat-msg { margin: 5px 0; }
+        .chat-name-team { color: var(--accent); font-weight: bold; }
+        
+        .scoreboard { display: flex; justify-content: space-between; font-size: 1.5rem; font-weight: bold; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        .team-list { font-size: 0.9rem; color: #ccc; margin-top: 10px; line-height: 1.5; }
+        .captain { color: var(--accent); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="main-header">
+    <img src="/logo.png" alt="S">
+    <span>cience Bowl Reader</span>
+</div>
+
+<div id="login-screen">
+    <input type="text" id="p-name" placeholder="Your Name" style="font-size: 1.2rem; padding: 12px;"><br>
+    <select id="p-team" style="font-size: 1.2rem; padding: 12px; margin-top: 10px;">
+        <option value="A">Team A</option>
+        <option value="B">Team B</option>
+    </select><br>
+    
+    <div style="margin: 25px 0;">
+        <input type="checkbox" id="p-captain" style="transform: scale(1.5); cursor: pointer;">
+        <label for="p-captain" style="font-size: 1.2rem; cursor: pointer; margin-left: 10px;">Request Captain</label>
+    </div>
+    
+    <button onclick="joinGame()" style="font-size: 1.2rem; padding: 12px 30px;">Join Game</button>
+</div>
+
+<div id="game-ui">
+    <div class="col">
+        <div class="box">
+            <div class="scoreboard">
+                <div>Team A: <span id="score-A">0</span></div>
+                <div>Team B: <span id="score-B">0</span></div>
+            </div>
+            <div style="display: flex; gap: 20px;">
+                <div id="list-A" class="team-list"></div>
+                <div id="list-B" class="team-list"></div>
+            </div>
+        </div>
+        
+        <div class="box" style="border: 2px solid var(--accent); box-shadow: 0 0 10px rgba(0, 229, 255, 0.1);">
+            <h3 style="margin-top: 0; color: var(--accent);">Team Chat</h3>
+            <div id="chat-box" class="chat-container"></div>
+            <div style="display: flex; gap: 5px;">
+                <input type="text" id="chat-input" style="flex-grow: 1; padding: 8px;" placeholder="Discuss bonus securely...">
+                <button onclick="sendChat()" style="padding: 8px 15px;">Send</button>
+            </div>
+        </div>
+        
+        <button id="admin-start" onclick="socket.emit('startGame')" style="width: 100%; padding: 15px;">START ROUND</button>
+    </div>
+
+    <div class="col col-main">
+        <div class="box">
+            <h3 id="timer-display" style="float: right; margin: 0; color: var(--error); font-size: 2rem;">5.0</h3>
+            <h3 id="meta-display" style="margin-top: 0; color: #888;">Waiting for start...</h3>
+            
+            <h2 id="judgment-display" style="text-align: center; font-size: 3.5rem; margin: 10px 0; min-height: 65px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);"></h2>
+            
+            <div id="question-box"></div>
+            <hr style="border-color: #333; margin: 20px 0;">
+            <div id="live-typing"></div>
+            
+            <div id="input-area">
+                <input type="text" id="answer-input" placeholder="Type answer & press Enter..." autocomplete="off">
+            </div>
+            
+            <h3 id="reveal-display" style="color: white; text-align: center; margin-top: 20px;"></h3>
+        </div>
+        
+        <div class="box">
+            <h3 style="margin-top: 0;">Match Event Log</h3>
+            <div id="event-log"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const socket = io();
+    let myId = null;
+    let amICaptain = false;
+
+    socket.on('connect', () => { myId = socket.id; });
+
+    function joinGame() {
+        const name = document.getElementById('p-name').value || "Player";
+        const team = document.getElementById('p-team').value;
+        const reqCaptain = document.getElementById('p-captain').checked;
+        
+        socket.emit('join', { name, team, reqCaptain });
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('game-ui').style.display = 'flex';
+    }
+
+    socket.on('updateState', ({ players, scores, game, lockedTeams }) => {
+        document.getElementById('score-A').innerText = scores.A;
+        document.getElementById('score-B').innerText = scores.B;
+        
+        let listA = "<b>Team A:</b><br>", listB = "<b>Team B:</b><br>";
+        amICaptain = false;
+
+        for (let id in players) {
+            let p = players[id];
+            let capStr = p.isCaptain ? `<span class="captain"> (CAPTAIN)</span>` : "";
+            if (id === myId && p.isCaptain) amICaptain = true;
+            
+            let pStr = `${p.name}${capStr}<br>`;
+            if (p.team === 'A') listA += pStr; else listB += pStr;
+        }
+        document.getElementById('list-A').innerHTML = listA;
+        document.getElementById('list-B').innerHTML = listB;
+
+        let inputArea = document.getElementById('input-area');
+        let answerInput = document.getElementById('answer-input');
+        
+        if (game.state === 'buzzing' && game.buzzedPlayer === myId) {
+            inputArea.style.display = 'block';
+            answerInput.disabled = false;
+            answerInput.focus();
+        } else if (game.state === 'bonus' && players[myId] && players[myId].team === game.activeTeam && amICaptain) {
+            inputArea.style.display = 'block';
+            answerInput.disabled = false;
+            answerInput.focus();
+        } else {
+            inputArea.style.display = 'none';
+            answerInput.value = "";
+        }
+        
+        if(game.state !== 'lobby') document.getElementById('admin-start').style.display = 'none';
+    });
+
+    socket.on('clearBoard', () => {
+        document.getElementById('question-box').innerHTML = "";
+        document.getElementById('reveal-display').innerText = "";
+        document.getElementById('live-typing').innerText = "";
+        document.getElementById('judgment-display').innerText = "";
+    });
+
+    socket.on('judgment', ({ isCorrect, text }) => {
+        let jDisp = document.getElementById('judgment-display');
+        jDisp.innerText = text;
+        jDisp.style.color = isCorrect ? 'var(--success)' : 'var(--error)';
+    });
+
+    socket.on('gameOver', ({ scores }) => {
+        document.getElementById('question-box').innerHTML = `<div style="text-align: center;"><span style="color: var(--success); font-size: 2.5rem;">ROUND COMPLETE!</span><br><br><h2>Final Score:</h2><h3 style="font-size: 2rem;">Team A: ${scores.A}<br>Team B: ${scores.B}</h3></div>`;
+        document.getElementById('judgment-display').innerText = "";
+        let startBtn = document.getElementById('admin-start');
+        startBtn.innerText = 'RESTART MATCH';
+        startBtn.style.display = 'block';
+    });
+
+    socket.on('word', (word) => {
+        let qBox = document.getElementById('question-box');
+        if (/^[WXYZ]\)$/.test(word)) {
+            qBox.innerHTML += `<br><span style="color: #b0bec5; margin-left: 15px;">${word}</span> `;
+        } else {
+            qBox.innerHTML += word + " ";
+        }
+    });
+
+    socket.on('liveType', ({ name, text }) => {
+        document.getElementById('live-typing').innerText = `${name} is typing: ${text}`;
+    });
+
+    socket.on('log', (msg) => {
+        let log = document.getElementById('event-log');
+        log.innerHTML = `<div>> ${msg}</div>` + log.innerHTML;
+    });
+
+    socket.on('timerUpdate', (time) => {
+        document.getElementById('timer-display').innerText = time;
+    });
+
+    socket.on('revealAnswer', (ans) => {
+        document.getElementById('reveal-display').innerText = ans;
+    });
+
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT') {
+            e.preventDefault();
+            socket.emit('buzz');
+        }
+    });
+
+    document.getElementById('answer-input').addEventListener('input', (e) => {
+        socket.emit('typing', e.target.value);
+    });
+
+    document.getElementById('answer-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const inputField = e.target;
+            if (inputField.value.trim() === "") return; 
+            socket.emit('submitAnswer', inputField.value);
+            inputField.value = "";
+            inputField.disabled = true; 
+        }
+    });
+
+    function sendChat() {
+        let box = document.getElementById('chat-input');
+        if(box.value.trim() !== "") {
+            socket.emit('chatMessage', box.value);
+            box.value = "";
+        }
+    }
+    
+    document.getElementById('chat-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') sendChat();
+    });
+
+    socket.on('chatReceive', ({ name, msg }) => {
+        let chat = document.getElementById('chat-box');
+        chat.innerHTML += `<div class="chat-msg"><span class="chat-name-team">${name}:</span> ${msg}</div>`;
+        chat.scrollTop = chat.scrollHeight;
+    });
+</script>
+</body>
+</html>
